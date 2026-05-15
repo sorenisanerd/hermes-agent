@@ -255,12 +255,22 @@ class HomeAssistantAdapter(BasePlatformAdapter):
         if old_val == new_val:
             return None
         attrs = new_state.get("attributes", {})
+        # Phone notification sensor: surface sender/app metadata so the agent
+        # can attribute SMS vs Messenger vs other notifications correctly.
+        if _domain_of(entity_id) == "sensor" and "last_notification" in entity_id:
+            sender_info = (
+                attrs.get("sender_title") or attrs.get("source") or attrs.get("app_name")
+            )
+            if sender_info:
+                return f"📋 {sender_info}: {new_val}"
+            return f"📋 {new_val}"
         template = _DOMAIN_TEMPLATES.get(_domain_of(entity_id), _DEFAULT_TEMPLATE)
         return template.format(
             name=attrs.get("friendly_name", entity_id), entity_id=entity_id, old=old_val, new=new_val,
             temp=attrs.get("current_temperature", "?"), target=attrs.get("temperature", "?"),
             unit=attrs.get("unit_of_measurement", ""), on_off="on" if new_val == "on" else "off",
             new_trig=_TRIGGERED[new_val == "on"], old_trig=_TRIGGERED[old_val == "on"])
+
 
     # -- Outbound messaging -------------------------------------------------
 
