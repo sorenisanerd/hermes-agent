@@ -244,12 +244,30 @@ class ElevenLabsStreamer(StreamingTTSProvider):
             "streaming_model_id",
             self.section.get("model_id", DEFAULT_ELEVENLABS_STREAMING_MODEL_ID),
         )
-        yield from client.text_to_speech.convert(
+        kwargs = dict(
             text=text,
             voice_id=voice_id,
             model_id=model_id,
             output_format="pcm_24000",
         )
+        # Mirror the sync _generate_elevenlabs path: speed/style from the
+        # tts.elevenlabs config belong in voice_settings. Without this the
+        # streaming / voice-chat path silently drops tts.elevenlabs.speed
+        # and speaks at 1.0x regardless of the configured value.
+        speed = self.section.get("speed")
+        style = self.section.get("style")
+        if speed is not None or style is not None:
+            try:
+                from elevenlabs.types.voice_settings import VoiceSettings as ELSettings
+                vs_kwargs = {}
+                if speed is not None:
+                    vs_kwargs["speed"] = float(speed)
+                if style is not None:
+                    vs_kwargs["style"] = float(style)
+                kwargs["voice_settings"] = ELSettings(**vs_kwargs)
+            except (ValueError, TypeError, ImportError) as e:
+                logger.warning("Invalid elevenlabs speed/style setting: %s", e)
+        yield from client.text_to_speech.convert(**kwargs)
 
 
 def _openai_config_api_key() -> str:
