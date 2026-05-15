@@ -220,10 +220,28 @@ def _generate_elevenlabs(text: str, output_path: str, tts_config: Dict[str, Any]
     api_key = _require_key("ELEVENLABS_API_KEY", "elevenlabs", "Get one at https://elevenlabs.io/")
     el_config = tts_config.get("elevenlabs") or {}
     client = _origin()._import_elevenlabs()(api_key=api_key, **_elevenlabs_environment_kwargs(el_config))
-    audio_generator = client.text_to_speech.convert(
-        text=text, voice_id=el_config.get("voice_id", DEFAULT_ELEVENLABS_VOICE_ID),
+    kwargs: Dict[str, Any] = dict(
+        text=text,
+        voice_id=el_config.get("voice_id", DEFAULT_ELEVENLABS_VOICE_ID),
         model_id=el_config.get("model_id", DEFAULT_ELEVENLABS_MODEL_ID),
-        output_format="opus_48000_64" if output_path.endswith(".ogg") else "mp3_44100_128")
+        output_format="opus_48000_64" if output_path.endswith(".ogg") else "mp3_44100_128",
+    )
+    # Voice settings — speed/style from the tts.elevenlabs config. Invalid
+    # values are warned and ignored rather than failing the whole call.
+    speed = el_config.get("speed")
+    style = el_config.get("style")
+    if speed is not None or style is not None:
+        try:
+            from elevenlabs.types.voice_settings import VoiceSettings as ELSettings
+            vs_kwargs = {}
+            if speed is not None:
+                vs_kwargs["speed"] = float(speed)
+            if style is not None:
+                vs_kwargs["style"] = float(style)
+            kwargs["voice_settings"] = ELSettings(**vs_kwargs)
+        except (ValueError, TypeError, ImportError) as e:
+            logger.warning("Invalid elevenlabs speed/style setting: %s", e)
+    audio_generator = client.text_to_speech.convert(**kwargs)
     with open(output_path, "wb") as f:
         f.writelines(audio_generator)
     return output_path
