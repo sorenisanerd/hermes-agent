@@ -1272,6 +1272,8 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                 message_id=data.get("messageId"),
                 media_urls=cached_urls,
                 media_types=media_types,
+                reply_to_text=data.get("quotedMessageBody") or None,
+                reply_to_message_id=data.get("quotedMessageId") or None,
             )
         except Exception as e:
             print(f"[{self.name}] Error building event: {e}")
