@@ -348,7 +348,21 @@ class HomeAssistantAdapter(BasePlatformAdapter):
             )
 
         if domain == "sensor":
-            unit = new_state.get("attributes", {}).get("unit_of_measurement", "")
+            attrs = new_state.get("attributes", {})
+            unit = attrs.get("unit_of_measurement", "")
+
+            # Check if this is the phone notification sensor with metadata
+            if "last_notification" in entity_id:
+                app_name = attrs.get("app_name", "")
+                source = attrs.get("source", "")
+                sender_title = attrs.get("sender_title", "")
+                extra = attrs.get("extra", "")
+                sender_info = sender_title or source or app_name
+                if sender_info:
+                    return f"📋 {sender_info}: {new_val}"
+                return f"📋 {new_val}"
+
+            unit = attrs.get("unit_of_measurement", "")
             return (
                 f"[Home Assistant] {friendly_name}: changed from "
                 f"{old_val}{unit} to {new_val}{unit}"
