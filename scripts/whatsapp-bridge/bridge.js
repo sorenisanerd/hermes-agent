@@ -146,6 +146,18 @@ function getContextInfo(messageContent) {
   return {};
 }
 
+function extractMessageBody(messageContent) {
+  if (!messageContent || typeof messageContent !== 'object') return '';
+  if (messageContent.conversation) return messageContent.conversation;
+  if (messageContent.extendedTextMessage?.text) return messageContent.extendedTextMessage.text;
+  if (messageContent.imageMessage?.caption) return messageContent.imageMessage.caption;
+  if (messageContent.videoMessage?.caption) return messageContent.videoMessage.caption;
+  if (messageContent.documentMessage?.caption) return messageContent.documentMessage.caption;
+  if (messageContent.buttonsMessage?.contentText) return messageContent.buttonsMessage.contentText;
+  if (messageContent.listMessage?.description) return messageContent.listMessage.description;
+  return '';
+}
+
 mkdirSync(SESSION_DIR, { recursive: true });
 
 // Build LID → phone reverse map from session files (lid-mapping-{phone}.json)
@@ -321,6 +333,7 @@ async function startSocket() {
       const quotedParticipant = normalizeWhatsAppId(contextInfo?.participant || '') || null;
       const quotedRemoteJid = normalizeWhatsAppId(contextInfo?.remoteJid || '') || null;
       const hasQuotedMessage = !!contextInfo?.quotedMessage;
+      const quotedMessageBody = hasQuotedMessage ? extractMessageBody(contextInfo.quotedMessage) : '';
 
       // Extract message body
       let body = '';
@@ -436,6 +449,7 @@ async function startSocket() {
         quotedParticipant,
         quotedRemoteJid,
         hasQuotedMessage,
+        quotedMessageBody,
         botIds,
         timestamp: msg.messageTimestamp,
       };
