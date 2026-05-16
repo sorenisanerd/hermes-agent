@@ -223,6 +223,7 @@ const MAX_RECENT_IDS = 50;
 
 let sock = null;
 let connectionState = 'disconnected';
+let presenceHeartbeat = null;
 
 async function startSocket() {
   const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
@@ -235,7 +236,7 @@ async function startSocket() {
     printQRInTerminal: false,
     browser: ['Hermes Agent', 'Chrome', '120.0'],
     syncFullHistory: false,
-    markOnlineOnConnect: false,
+    markOnlineOnConnect: true,
     // Required for Baileys 7.x: without this, incoming messages that need
     // E2EE session re-establishment are silently dropped (msg.message === null)
     getMessage: async (key) => {
@@ -260,6 +261,12 @@ async function startSocket() {
       const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
       connectionState = 'disconnected';
 
+      // Clear presence heartbeat on disconnect
+      if (presenceHeartbeat) {
+        clearInterval(presenceHeartbeat);
+        presenceHeartbeat = null;
+      }
+
       if (reason === DisconnectReason.loggedOut) {
         console.log('❌ Logged out. Delete session and restart to re-authenticate.');
         process.exit(1);
@@ -275,6 +282,16 @@ async function startSocket() {
     } else if (connection === 'open') {
       connectionState = 'connected';
       console.log('✅ WhatsApp connected!');
+
+      // Mark as available so the account shows as online
+      sock.sendPresenceUpdate('available').catch(() => {});
+
+      // Refresh presence periodically so online status doesn't fade
+      if (presenceHeartbeat) clearInterval(presenceHeartbeat);
+      presenceHeartbeat = setInterval(() => {
+        sock?.sendPresenceUpdate('available').catch(() => {});
+      }, 30000);
+
       if (PAIR_ONLY) {
         console.log('✅ Pairing complete. Credentials saved.');
         // Give Baileys a moment to flush creds, then exit cleanly
@@ -492,6 +509,13 @@ async function startSocket() {
       messageQueue.push(event);
       if (messageQueue.length > MAX_QUEUE_SIZE) {
         messageQueue.shift();
+      }
+
+      // Send read receipt so sender sees double checkmarks / blue ticks
+      try {
+        sock.readMessages([msg.key]);
+      } catch (_err) {
+        if (WHATSAPP_DEBUG) console.error('[bridge] Failed to mark message as read:', _err.message);
       }
     }
   });
