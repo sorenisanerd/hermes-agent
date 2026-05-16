@@ -391,6 +391,7 @@ function enqueueDeliveryStatus(args) {
 
 let sock = null;
 let connectionState = 'disconnected';
+let presenceHeartbeat = null;
 
 function emitPairEvent(event) {
   if (!PAIR_JSON) return;
@@ -413,7 +414,7 @@ async function startSocket() {
     printQRInTerminal: false,
     browser: ['Hermes Agent', 'Chrome', '120.0'],
     syncFullHistory: false,
-    markOnlineOnConnect: false,
+    markOnlineOnConnect: true,
     // Required for Baileys 7.x: without this, incoming messages that need
     // E2EE session re-establishment are silently dropped (msg.message === null)
     getMessage: async (key) => {
@@ -442,6 +443,12 @@ async function startSocket() {
     if (connection === 'close') {
       const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
       connectionState = 'disconnected';
+
+      // Clear presence heartbeat on disconnect
+      if (presenceHeartbeat) {
+        clearInterval(presenceHeartbeat);
+        presenceHeartbeat = null;
+      }
 
       if (reason === DisconnectReason.loggedOut) {
         emitPairEvent({ event: 'error', error: 'logged_out', reason });
@@ -473,6 +480,15 @@ async function startSocket() {
       if (!PAIR_JSON) {
         console.log('✅ WhatsApp connected!');
       }
+
+      // Mark as available so the account shows as online
+      sock.sendPresenceUpdate('available').catch(() => {});
+
+      // Refresh presence periodically so online status doesn't fade
+      if (presenceHeartbeat) clearInterval(presenceHeartbeat);
+      presenceHeartbeat = setInterval(() => {
+        sock?.sendPresenceUpdate('available').catch(() => {});
+      }, 30000);
       if (PAIR_ONLY) {
         if (!PAIR_JSON) {
           console.log('✅ Pairing complete. Credentials saved.');
@@ -810,6 +826,13 @@ async function startSocket() {
       });
       if (messageQueue.length > MAX_QUEUE_SIZE) {
         messageQueue.shift();
+      }
+
+      // Send read receipt so sender sees double checkmarks / blue ticks
+      try {
+        sock.readMessages([msg.key]);
+      } catch (_err) {
+        if (WHATSAPP_DEBUG) console.error('[bridge] Failed to mark message as read:', _err.message);
       }
     }
   });
