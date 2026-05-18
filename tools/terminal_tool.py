@@ -963,9 +963,13 @@ def _plan_execution(
         cwd = remapped
     # Reject non-positive timeouts before deadline math: ``timeout or
     # default`` would silently turn 0 into the default, and a negative
-    # value is truthy and would fire an immediate "-Ns" timeout.
-    if timeout is not None and timeout <= 0:
-        raise _Rejected(tool_error(f"timeout must be a positive number of seconds (got {timeout})."))
+    # value is truthy and would fire an immediate "-Ns" timeout. The model
+    # can pass ``timeout`` as a string via JSON, and YAML config may yield
+    # strings too — coerce to int before comparing.
+    if timeout is not None:
+        timeout = int(timeout)
+        if timeout <= 0:
+            raise _Rejected(tool_error(f"timeout must be a positive number of seconds (got {timeout})."))
     promoted = None
     if not background:
         # An over-cap foreground timeout is a bounded job the caller wants to wait for (test suites,
@@ -983,7 +987,7 @@ def _plan_execution(
 
     return _ExecPlan(
         config=config, env_type=env_type, effective_task_id=effective_task_id,
-        image=image, cwd=cwd, host_cwd=host_cwd, effective_timeout=timeout or config["timeout"],
+        image=image, cwd=cwd, host_cwd=host_cwd, effective_timeout=timeout or int(config["timeout"]),
         promoted_from_foreground_timeout=promoted,
     )
 
