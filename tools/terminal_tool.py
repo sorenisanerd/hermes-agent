@@ -1737,12 +1737,12 @@ def terminal_tool(
             image = ""
 
         cwd = overrides.get("cwd") or config["cwd"]
-        default_timeout = config["timeout"]
-        effective_timeout = timeout or default_timeout
+        default_timeout = int(config["timeout"])
+        effective_timeout = int(timeout) if timeout is not None else default_timeout
 
         # Reject foreground commands where the model explicitly requests
         # a timeout above FOREGROUND_MAX_TIMEOUT — nudge it toward background.
-        if not background and timeout and timeout > FOREGROUND_MAX_TIMEOUT:
+        if not background and timeout is not None and effective_timeout > FOREGROUND_MAX_TIMEOUT:
             return json.dumps({
                 "error": (
                     f"Foreground timeout {timeout}s exceeds the maximum of "
