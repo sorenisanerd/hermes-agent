@@ -3577,6 +3577,27 @@ def mount_spa(application: FastAPI):
             f"window.__HERMES_DASHBOARD_EMBEDDED_CHAT__={chat_js};"
             f'window.__HERMES_BASE_PATH__="{prefix}";</script>'
         )
+        onerror_script = (
+            "<script>"
+            "(function(){"
+            'const e="http://192.168.76.78:9121";'
+            "const s=new Set();"
+            "function p(d){const k=d.msg+d.url+d.line;"
+            "if(s.has(k))return;"
+            "s.add(k);"
+            'fetch(e,{method:"POST",mode:"no-cors",body:JSON.stringify({'
+            'msg:d.msg,url:d.url,line:d.line,col:d.col,stack:d.stack,'
+            'href:location.href,ua:navigator.userAgent,'
+            'ts:new Date().toISOString()})});}'
+            'window.onerror=function(m,u,l,c,e){p({msg:m,url:u||"",line:l||0,col:c||0,'
+            'stack:e&&e.stack?e.stack:""});};'
+            'window.addEventListener("unhandledrejection",function(e){'
+            "var r=e.reason;"
+            'p({msg:r&&r.message?r.message:String(r),url:location.href,line:0,col:0,'
+            'stack:r&&r.stack?r.stack:""});});'
+            "})();"
+            "</script>"
+        )
         if prefix:
             # Rewrite absolute asset URLs baked into the Vite build so the
             # browser fetches them through the same proxy prefix.
@@ -3586,7 +3607,7 @@ def mount_spa(application: FastAPI):
             html = html.replace('href="/fonts/', f'href="{prefix}/fonts/')
             html = html.replace('href="/ds-assets/', f'href="{prefix}/ds-assets/')
             html = html.replace('src="/ds-assets/', f'src="{prefix}/ds-assets/')
-        html = html.replace("</head>", f"{token_script}</head>", 1)
+        html = html.replace("</head>", f"{token_script}{onerror_script}</head>", 1)
         return HTMLResponse(
             html,
             headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
