@@ -119,6 +119,7 @@ _PUBLIC_API_PATHS: frozenset = frozenset({
     "/api/dashboard/themes",
     "/api/dashboard/plugins",
     "/api/dashboard/plugins/rescan",
+    "/api/log-error",
 })
 
 
@@ -3146,6 +3147,33 @@ async def get_models_analytics(days: int = 30):
 
 
 # ---------------------------------------------------------------------------
+# /api/log-error — client-side JS error collection.
+# Injected by the onerror handler in the SPA's index.html.  No auth token
+# required (the endpoint is in _PUBLIC_API_PATHS) so errors from blank-
+# screen situations (bundle load failure, React init crash) still arrive.
+# ---------------------------------------------------------------------------
+
+_ERROR_LOG = get_hermes_home() / "logs" / "dashboard-errors.jsonl"
+
+
+@app.post("/api/log-error")
+async def log_error(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "invalid json"}, status_code=400)
+
+    entry = {"_received_at": time.time(), **body}
+    try:
+        _ERROR_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(_ERROR_LOG, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass  # best-effort — don't crash the dashboard over a log write
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
 # /api/pty — PTY-over-WebSocket bridge for the dashboard "Chat" tab.
 #
 # The endpoint spawns the same ``hermes --tui`` binary the CLI uses, behind
@@ -3580,7 +3608,7 @@ def mount_spa(application: FastAPI):
         onerror_script = (
             "<script>"
             "(function(){"
-            'const e="http://192.168.76.78:9121";'
+            'const e="/api/log-error";'
             "const s=new Set();"
             "function p(d){const k=d.msg+d.url+d.line;"
             "if(s.has(k))return;"
