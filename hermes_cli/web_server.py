@@ -3598,6 +3598,28 @@ def mount_spa(application: FastAPI):
             "})();"
             "</script>"
         )
+        test_button_script = (
+            "<script>"
+            "document.addEventListener('DOMContentLoaded',function(){"
+            "var b=document.createElement('div');"
+            "b.id='__hermes_test_error_btn';"
+            "b.textContent='Test Error';"
+            "Object.assign(b.style,{"
+            "position:'fixed',bottom:'16px',right:'16px',zIndex:'9999',"
+            "background:'#dc2626',color:'#fff',padding:'6px 14px',"
+            "borderRadius:'6px',fontSize:'12px',cursor:'pointer',"
+            "fontFamily:'monospace',opacity:'0.7',userSelect:'none'"
+            "});"
+            "b.title='Click to throw a test exception';"
+            "b.onclick=function(){"
+            "throw new Error('[onerror test] intentional exception from test button');"
+            "};"
+            "b.onmouseenter=function(){this.style.opacity='1';};"
+            "b.onmouseleave=function(){this.style.opacity='0.7';};"
+            "document.body.appendChild(b);"
+            "});"
+            "</script>"
+        )
         if prefix:
             # Rewrite absolute asset URLs baked into the Vite build so the
             # browser fetches them through the same proxy prefix.
@@ -3607,7 +3629,7 @@ def mount_spa(application: FastAPI):
             html = html.replace('href="/fonts/', f'href="{prefix}/fonts/')
             html = html.replace('href="/ds-assets/', f'href="{prefix}/ds-assets/')
             html = html.replace('src="/ds-assets/', f'src="{prefix}/ds-assets/')
-        html = html.replace("</head>", f"{token_script}{onerror_script}</head>", 1)
+        html = html.replace("</head>", f"{token_script}{onerror_script}{test_button_script}</head>", 1)
         return HTMLResponse(
             html,
             headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
