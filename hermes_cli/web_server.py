@@ -11540,6 +11540,33 @@ async def get_models_analytics(days: int = 30, profile: Optional[str] = None):
 
 
 # ---------------------------------------------------------------------------
+# /api/log-error — client-side JS error collection.
+# Injected by the onerror handler in the SPA's index.html.  No auth token
+# required (the endpoint is in _PUBLIC_API_PATHS) so errors from blank-
+# screen situations (bundle load failure, React init crash) still arrive.
+# ---------------------------------------------------------------------------
+
+_ERROR_LOG = get_hermes_home() / "logs" / "dashboard-errors.jsonl"
+
+
+@app.post("/api/log-error")
+async def log_error(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "invalid json"}, status_code=400)
+
+    entry = {"_received_at": time.time(), **body}
+    try:
+        _ERROR_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(_ERROR_LOG, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass  # best-effort — don't crash the dashboard over a log write
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
 # /api/pty — PTY-over-WebSocket bridge for the dashboard "Chat" tab.
 #
 # The endpoint spawns the same ``hermes --tui`` binary the CLI uses, behind
@@ -12449,6 +12476,92 @@ def mount_spa(application: FastAPI):
                 f"window.__HERMES_AUTH_REQUIRED__={gated_js};"
                 f"</script>"
             )
+        onerror_script = (
+            "<script>"
+            "(function(){"
+            'const e="/api/log-error";'
+            "const s=new Set();"
+            "function p(d){const k=d.msg+d.url+d.line;"
+            "if(s.has(k))return;"
+            "s.add(k);"
+            'fetch(e,{method:"POST",mode:"no-cors",body:JSON.stringify({'
+            'msg:d.msg,url:d.url,line:d.line,col:d.col,stack:d.stack,'
+            'href:location.href,ua:navigator.userAgent,'
+            'ts:new Date().toISOString()})});}'
+            'window.onerror=function(m,u,l,c,e){p({msg:m,url:u||"",line:l||0,col:c||0,'
+            'stack:e&&e.stack?e.stack:""});};'
+            'window.addEventListener("unhandledrejection",function(e){'
+            "var r=e.reason;"
+            'p({msg:r&&r.message?r.message:String(r),url:location.href,line:0,col:0,'
+            'stack:r&&r.stack?r.stack:""});});'
+            "})();"
+            "</script>"
+        )
+        test_button_script = (
+            "<script>"
+            "document.addEventListener('DOMContentLoaded',function(){"
+            "var b=document.createElement('div');"
+            "b.id='__hermes_test_error_btn';"
+            "b.textContent='Test Error';"
+            "Object.assign(b.style,{"
+            "position:'fixed',bottom:'16px',right:'16px',zIndex:'9999',"
+            "background:'#dc2626',color:'#fff',padding:'6px 14px',"
+            "borderRadius:'6px',fontSize:'12px',cursor:'pointer',"
+            "fontFamily:'monospace',opacity:'0.7',userSelect:'none'"
+            "});"
+            "b.title='Click to throw a test exception';"
+            "b.onclick=function(){"
+            "throw new Error('[onerror test] intentional exception from test button');"
+            "};"
+            "b.onmouseenter=function(){this.style.opacity='1';};"
+            "b.onmouseleave=function(){this.style.opacity='0.7';};"
+            "document.body.appendChild(b);"
+            "});"
+            "</script>"
+        )
+        onerror_script = (
+            "<script>"
+            "(function(){"
+            'const e="/api/log-error";'
+            "const s=new Set();"
+            "function p(d){const k=d.msg+d.url+d.line;"
+            "if(s.has(k))return;"
+            "s.add(k);"
+            'fetch(e,{method:"POST",mode:"no-cors",body:JSON.stringify({'
+            'msg:d.msg,url:d.url,line:d.line,col:d.col,stack:d.stack,'
+            'href:location.href,ua:navigator.userAgent,'
+            'ts:new Date().toISOString()})});}'
+            'window.onerror=function(m,u,l,c,e){p({msg:m,url:u||"",line:l||0,col:c||0,'
+            'stack:e&&e.stack?e.stack:""});};'
+            'window.addEventListener("unhandledrejection",function(e){'
+            "var r=e.reason;"
+            'p({msg:r&&r.message?r.message:String(r),url:location.href,line:0,col:0,'
+            'stack:r&&r.stack?r.stack:""});});'
+            "})();"
+            "</script>"
+        )
+        test_button_script = (
+            "<script>"
+            "document.addEventListener('DOMContentLoaded',function(){"
+            "var b=document.createElement('div');"
+            "b.id='__hermes_test_error_btn';"
+            "b.textContent='Test Error';"
+            "Object.assign(b.style,{"
+            "position:'fixed',bottom:'16px',right:'16px',zIndex:'9999',"
+            "background:'#dc2626',color:'#fff',padding:'6px 14px',"
+            "borderRadius:'6px',fontSize:'12px',cursor:'pointer',"
+            "fontFamily:'monospace',opacity:'0.7',userSelect:'none'"
+            "});"
+            "b.title='Click to throw a test exception';"
+            "b.onclick=function(){"
+            "throw new Error('[onerror test] intentional exception from test button');"
+            "};"
+            "b.onmouseenter=function(){this.style.opacity='1';};"
+            "b.onmouseleave=function(){this.style.opacity='0.7';};"
+            "document.body.appendChild(b);"
+            "});"
+            "</script>"
+        )
         if prefix:
             # Rewrite absolute asset URLs baked into the Vite build so the
             # browser fetches them through the same proxy prefix.
@@ -12458,7 +12571,8 @@ def mount_spa(application: FastAPI):
             html = html.replace('href="/fonts/', f'href="{prefix}/fonts/')
             html = html.replace('href="/ds-assets/', f'href="{prefix}/ds-assets/')
             html = html.replace('src="/ds-assets/', f'src="{prefix}/ds-assets/')
-        html = html.replace("</head>", f"{bootstrap_script}</head>", 1)
+        html = html.replace("<head>", f"<head>{onerror_script}", 1)
+        html = html.replace("</head>", f"{bootstrap_script}{test_button_script}</head>", 1)
         return HTMLResponse(
             html,
             headers={"Cache-Control": "no-store, no-cache, must-revalidate"},

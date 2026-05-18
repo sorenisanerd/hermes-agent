@@ -52,4 +52,5 @@ PUBLIC_API_PATHS: frozenset[str] = frozenset({
     # the NAS relay's bearer-only callback reaches the verifier instead of a
     # 401 no_cookie. The JWT — not this allowlist — is the security boundary.
     "/api/cron/fire",
+    "/api/log-error",
 })
