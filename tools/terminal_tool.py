@@ -2714,17 +2714,19 @@ def terminal_tool(
                     cwd, env_type, remapped,
                 )
             cwd = remapped
-        default_timeout = config["timeout"]
+        default_timeout = int(config["timeout"])
 
         # Validate an explicit timeout before it flows into deadline math.
         # ``timeout or default`` silently turns 0 into the default (0 can't mean
         # "no timeout" here), and a negative value is truthy so it would sail
         # through to ``deadline = now + timeout`` and fire an immediate,
         # nonsensical "-Ns" timeout. Reject non-positive values outright.
-        if timeout is not None and timeout <= 0:
-            return tool_error(
-                f"timeout must be a positive number of seconds (got {timeout})."
-            )
+        if timeout is not None:
+            timeout = int(timeout)
+            if timeout <= 0:
+                return tool_error(
+                    f"timeout must be a positive number of seconds (got {timeout})."
+                )
         effective_timeout = timeout or default_timeout
 
         # Reject foreground commands where the model explicitly requests
