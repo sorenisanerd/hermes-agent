@@ -3657,7 +3657,8 @@ def mount_spa(application: FastAPI):
             html = html.replace('href="/fonts/', f'href="{prefix}/fonts/')
             html = html.replace('href="/ds-assets/', f'href="{prefix}/ds-assets/')
             html = html.replace('src="/ds-assets/', f'src="{prefix}/ds-assets/')
-        html = html.replace("</head>", f"{token_script}{onerror_script}{test_button_script}</head>", 1)
+        html = html.replace("<head>", f"<head>{onerror_script}", 1)
+        html = html.replace("</head>", f"{token_script}{test_button_script}</head>", 1)
         return HTMLResponse(
             html,
             headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
