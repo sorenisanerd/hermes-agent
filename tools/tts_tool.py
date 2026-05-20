@@ -821,15 +821,21 @@ def _generate_elevenlabs(text: str, output_path: str, tts_config: Dict[str, Any]
     else:
         output_format = "mp3_44100_128"
 
-    # Voice settings — speed, stability, etc. from config
+    # Voice settings — speed, stability, style, etc. from config
     voice_settings = None
     speed = el_config.get("speed")
-    if speed is not None:
+    style = el_config.get("style")
+    if speed is not None or style is not None:
         try:
             from elevenlabs.types.voice_settings import VoiceSettings as ELSettings
-            voice_settings = ELSettings(speed=float(speed))
+            kwargs = {}
+            if speed is not None:
+                kwargs["speed"] = float(speed)
+            if style is not None:
+                kwargs["style"] = float(style)
+            voice_settings = ELSettings(**kwargs)
         except (ValueError, TypeError, ImportError) as e:
-            logger.warning("Invalid elevenlabs speed setting '%s': %s", speed, e)
+            logger.warning("Invalid elevenlabs speed/style setting: %s", e)
 
     ElevenLabs = _import_elevenlabs()
     client = ElevenLabs(api_key=api_key)
