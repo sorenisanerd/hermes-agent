@@ -8048,6 +8048,9 @@ class GatewayRunner:
         if canonical == "compress":
             return await self._handle_compress_command(event)
 
+        if canonical == "recap":
+            return await self._handle_recap_command(event)
+
         if canonical == "usage":
             return await self._handle_usage_command(event)
 
@@ -12844,6 +12847,42 @@ class GatewayRunner:
             if preview:
                 example = t("gateway.footer.example_line", preview=preview)
         return t("gateway.footer.saved", state=state, example=example)
+
+    async def _handle_recap_command(self, event: MessageEvent) -> str:
+        """Handle /recap — LLM-generated summary of recent session activity."""
+        source = event.source
+        session_entry = self.session_store.get_or_create_session(source)
+        history = self.session_store.load_transcript(session_entry.session_id)
+
+        session_key = self._session_key_for_source(source)
+        try:
+            model, runtime_kwargs = self._resolve_session_agent_runtime(
+                source=source, session_key=session_key)
+        except Exception:
+            model, runtime_kwargs = None, {}
+
+        from hermes_cli.session_recap import async_build_recap_llm, build_recap
+        try:
+            return await async_build_recap_llm(
+                history,
+                provider=runtime_kwargs.get("provider"),
+                model=runtime_kwargs.get("model") or model,
+                api_key=runtime_kwargs.get("api_key"),
+                base_url=runtime_kwargs.get("base_url"),
+            )
+        except Exception:
+            title = None
+            if self._session_db:
+                try:
+                    title = self._session_db.get_session_title(session_entry.session_id)
+                except Exception:
+                    pass
+            return build_recap(
+                history,
+                session_title=title,
+                session_id=session_entry.session_id,
+                platform=source.platform.value if source else None,
+            )
 
     async def _handle_compress_command(self, event: MessageEvent) -> str:
         """Handle /compress command -- manually compress conversation context.

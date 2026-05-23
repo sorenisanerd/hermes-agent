@@ -8774,6 +8774,8 @@ class HermesCLI:
             self._handle_fast_command(cmd_original)
         elif canonical == "compress":
             self._manual_compress(cmd_original)
+        elif canonical == "recap":
+            self._handle_recap_command()
         elif canonical == "usage":
             self._show_usage()
         elif canonical == "insights":
@@ -10298,6 +10300,22 @@ class HermesCLI:
         # sys.exit inside a non-main thread does not exit the process).
         self._pending_relaunch = ["update"]
         return True
+
+    def _handle_recap_command(self) -> None:
+        """Show a summary of recent session activity (/recap)."""
+        from hermes_cli.session_recap import build_recap_llm, build_recap
+        history = self.conversation_history or []
+        main_runtime = None
+        if self.agent:
+            try:
+                main_runtime = self.agent._current_main_runtime()
+            except Exception:
+                pass
+        try:
+            recap = build_recap_llm(history, main_runtime=main_runtime)
+        except Exception:
+            recap = build_recap(history, session_id=self.session_id, platform="cli")
+        self._console_print(recap, highlight=False, markup=False)
 
     def _show_usage(self):
         """Show rate limits (if available) and session token usage."""

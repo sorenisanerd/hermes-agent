@@ -313,4 +313,98 @@ def build_recap(
     return "\n".join(lines)
 
 
-__all__ = ["build_recap"]
+_RECAP_SYSTEM_PROMPT = (
+    "Summarize this conversation session concisely. Cover: what the user was working on, "
+    "what was accomplished, key decisions or discoveries, and what remains to be done. "
+    "Be specific — name files, commands, and functions where relevant. "
+    "Return only the summary, no preamble."
+)
+
+_MAX_HISTORY_CHARS = 80_000
+
+
+def _build_history_for_llm(
+    messages: Sequence[Mapping[str, Any]],
+) -> List[Mapping[str, Any]]:
+    """Return a truncated user/assistant message list for the recap LLM call."""
+    result: List[Mapping[str, Any]] = []
+    total = 0
+    for msg in messages:
+        role = msg.get("role")
+        if role not in {"user", "assistant"}:
+            continue
+        content = _coerce_text(msg.get("content"))
+        if not content:
+            continue
+        if len(content) > 2000:
+            content = content[:2000] + "…"
+        result.append({"role": role, "content": content})
+        total += len(content)
+        if total >= _MAX_HISTORY_CHARS:
+            break
+    return result
+
+
+def build_recap_llm(
+    messages: Sequence[Mapping[str, Any]],
+    *,
+    main_runtime: Optional[Mapping[str, Any]] = None,
+    timeout: float = 60.0,
+) -> str:
+    """LLM-based recap identical to Claude Code's /recap behavior.
+
+    Calls the configured ``auxiliary.recap`` model (defaults to auto/main
+    provider). Raises on failure so callers can fall back to build_recap().
+    """
+    from agent.auxiliary_client import call_llm
+
+    history = _build_history_for_llm(messages)
+    prompt = [
+        {"role": "system", "content": _RECAP_SYSTEM_PROMPT},
+        *history,
+        {"role": "user", "content": "Please provide a recap of our conversation so far."},
+    ]
+    response = call_llm(
+        task="recap",
+        messages=prompt,
+        max_tokens=1500,
+        temperature=0.3,
+        timeout=timeout,
+        main_runtime=main_runtime,
+    )
+    return (response.choices[0].message.content or "").strip()
+
+
+async def async_build_recap_llm(
+    messages: Sequence[Mapping[str, Any]],
+    *,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    timeout: float = 60.0,
+) -> str:
+    """Async LLM-based recap for gateway handlers."""
+    from agent.auxiliary_client import async_call_llm
+
+    history = _build_history_for_llm(messages)
+    prompt = [
+        {"role": "system", "content": _RECAP_SYSTEM_PROMPT},
+        *history,
+        {"role": "user", "content": "Please provide a recap of our conversation so far."},
+    ]
+    response = await async_call_llm(
+        task="recap",
+        provider=provider,
+        model=model,
+        api_key=api_key,
+        base_url=base_url,
+        messages=prompt,
+        max_tokens=1500,
+        temperature=0.3,
+        timeout=timeout,
+    )
+    return (response.choices[0].message.content or "").strip()
+
+
+__all__ = ["build_recap", "build_recap_llm", "async_build_recap_llm"]
