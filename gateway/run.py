@@ -4995,8 +4995,18 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         Called at the very start of stop() — adapters are still connected so
         messages can be delivered. Best-effort: individual send failures are
         logged and swallowed so they never block the shutdown sequence.
+
+        Only notifies when there are active (mid-turn) agents — if no one is
+        actively using the gateway, skip all notifications to avoid spamming
+        home channels with irrelevant restart/shutdown messages.
         """
         active = self._snapshot_running_agents()
+        if not active:
+            logger.info(
+                "No active running agents — skipping shutdown notifications "
+                "(no mid-turn sessions to notify)."
+            )
+            return
         restart_source = self._restart_command_source if self._restart_requested else None
 
         action = "restarting" if self._restart_requested else "shutting down"
@@ -5102,65 +5112,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     platform_str, chat_id, e,
                 )
 
-        if self._restart_requested and restart_source is not None:
-            logger.debug("Skipping home-channel shutdown notifications for in-chat restart")
-            return
-
-        # Snapshot adapters up front: adapter.send() can hit a fatal error
-        # path that pops the adapter from self.adapters (see _handle_fatal
-        # elsewhere), which would otherwise trigger
-        # ``RuntimeError: dictionary changed size during iteration`` —
-        # observed in a user report during gateway shutdown.
-        for platform, adapter in list(self.adapters.items()):
-            home = self.config.get_home_channel(platform)
-            if not home or not home.chat_id:
-                continue
-
-            platform_cfg = self.config.platforms.get(platform)
-            if platform_cfg is not None and not platform_cfg.gateway_restart_notification:
-                logger.info(
-                    "Shutdown notification suppressed for home channel: %s has gateway_restart_notification=false",
-                    platform.value,
-                )
-                continue
-
-            dedup_key = (platform.value, str(home.chat_id), str(home.thread_id) if home.thread_id else None)
-            if dedup_key in notified:
-                continue
-
-            try:
-                metadata = self._thread_metadata_for_target(
-                    platform,
-                    home.chat_id,
-                    home.thread_id,
-                    adapter=adapter,
-                )
-                if metadata:
-                    result = await adapter.send(str(home.chat_id), msg, metadata=metadata)
-                else:
-                    result = await adapter.send(str(home.chat_id), msg)
-                if result is not None and getattr(result, "success", True) is False:
-                    logger.debug(
-                        "Failed to send shutdown notification to home channel %s:%s: %s",
-                        platform.value,
-                        home.chat_id,
-                        getattr(result, "error", "send returned success=False"),
-                    )
-                    continue
-
-                notified.add(dedup_key)
-                logger.info(
-                    "Sent shutdown notification to home channel %s:%s",
-                    platform.value,
-                    home.chat_id,
-                )
-            except Exception as e:
-                logger.debug(
-                    "Failed to send shutdown notification to home channel %s:%s: %s",
-                    platform.value,
-                    home.chat_id,
-                    e,
-                )
+        # No home-channel broadcast — the active-session loop above already
+        # notifies the specific chats that have running agents. Broadcasting
+        # to every home channel just spams platforms with no activity.
 
     async def _finalize_shutdown_agents(self, active_agents: Dict[str, Any]) -> None:
         for agent in active_agents.values():
@@ -6400,18 +6354,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         planned_restart_notification_pending = _planned_restart_notification_pending()
         await self._send_restart_notification()
 
-        # Broadcast a lightweight "gateway is back" message to configured home
-        # channels only for non-chat planned restarts (terminal/SIGUSR1/service
-        # paths). Chat-originated /restart already has a precise reply target
-        # in .restart_notify.json, so keep that lifecycle in the originating
-        # chat/topic instead of also leaking it to the configured home channel.
-        if planned_restart_notification_pending:
-            try:
-                await self._send_home_channel_startup_notifications(
-                    skip_targets=None,
-                )
-            finally:
-                _clear_planned_restart_notification()
+        # The originating chat already got the restart success notice above.
+        # Skip the home-channel broadcast - it just spams every platform
+        # with "Gateway online" when only one chat needs to know.
 
         # Automatically continue fresh sessions that were interrupted by the
         # previous gateway restart/shutdown.  The resume_pending flag is cleared
