@@ -3575,8 +3575,18 @@ class GatewayRunner:
         Called at the very start of stop() — adapters are still connected so
         messages can be delivered. Best-effort: individual send failures are
         logged and swallowed so they never block the shutdown sequence.
+
+        Only notifies when there are active (mid-turn) agents — if no one is
+        actively using the gateway, skip all notifications to avoid spamming
+        home channels with irrelevant restart/shutdown messages.
         """
         active = self._snapshot_running_agents()
+        if not active:
+            logger.info(
+                "No active running agents — skipping shutdown notifications "
+                "(no mid-turn sessions to notify)."
+            )
+            return
         restart_source = self._restart_command_source if self._restart_requested else None
 
         action = "restarting" if self._restart_requested else "shutting down"
