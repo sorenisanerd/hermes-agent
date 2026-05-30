@@ -581,9 +581,10 @@ def _validate_cron_base_url(
 def _validate_cron_script_path(script: Optional[str]) -> Optional[str]:
     """Validate a cron job script path at the API boundary.
 
-    Scripts must be relative paths that resolve within HERMES_HOME/scripts/.
-    Absolute paths and ~ expansion are rejected to prevent arbitrary script
-    execution via prompt injection.
+    Supports the ``skills/<skill_name>/<path>`` convention via
+    :func:`resolve_cron_script_path` in ``tools.path_security`` —
+    the skill must exist and the script must stay within its ``scripts/``
+    directory.
 
     Returns an error string if blocked, else None (valid).
     """
@@ -591,30 +592,10 @@ def _validate_cron_script_path(script: Optional[str]) -> Optional[str]:
         return None  # empty/None = clearing the field, always OK
 
     from hermes_constants import get_hermes_home
+    from tools.path_security import resolve_cron_script_path
 
-    raw = script.strip()
-
-    # Reject absolute paths and ~ expansion at the API boundary.
-    # Only relative paths within ~/.hermes/scripts/ are allowed.
-    if raw.startswith(("/", "~")) or (len(raw) >= 2 and raw[1] == ":"):
-        return (
-            f"Script path must be relative to ~/.hermes/scripts/. "
-            f"Got absolute or home-relative path: {raw!r}. "
-            f"Place scripts in ~/.hermes/scripts/ and use just the filename."
-        )
-
-    # Validate containment after resolution
-    from tools.path_security import validate_within_dir
-
-    scripts_dir = get_hermes_home() / "scripts"
-    scripts_dir.mkdir(parents=True, exist_ok=True)
-    containment_error = validate_within_dir(scripts_dir / raw, scripts_dir)
-    if containment_error:
-        return (
-            f"Script path escapes the scripts directory via traversal: {raw!r}"
-        )
-
-    return None
+    _, error = resolve_cron_script_path(script.strip(), get_hermes_home())
+    return error
 
 
 def _format_job(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -1670,7 +1651,7 @@ Scheduling from cron-run sessions is disabled by default and enabled via cron.al
             },
             "script": {
                 "type": "string",
-                "description": f"Optional path to a script that runs each tick. In the default mode its stdout is injected into the agent's prompt as context (data-collection / change-detection pattern). With no_agent=True, the script IS the job and its stdout is delivered verbatim (classic watchdog pattern). Relative paths resolve under {display_hermes_home()}/scripts/. ``.sh``/``.bash`` extensions run via bash, everything else via Python. On update, pass empty string to clear."
+                "description": f"Optional path to a script that runs each tick. In the default mode its stdout is injected into the agent's prompt as context (data-collection / change-detection pattern). With no_agent=True, the script IS the job and its stdout is delivered verbatim (classic watchdog pattern). Relative paths resolve under {display_hermes_home()}/scripts/. The prefix ``skills/<skill_name>/`` resolves to that skill's ``scripts/`` directory (e.g. ``skills/google-calendar/calendar-nudge.sh``). ``.sh``/``.bash`` extensions run via bash, everything else via Python. On update, pass empty string to clear."
             },
             "monitor_script": {
                 "type": "string",

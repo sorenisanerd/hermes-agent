@@ -3486,10 +3486,13 @@ def _run_job_script(
 ) -> tuple[bool, str]:
     """Execute a cron job's data-collection script and capture its output.
 
-    Scripts must reside within HERMES_HOME/scripts/.  Both relative and
-    absolute paths are resolved and validated against this directory to
-    prevent arbitrary script execution via path traversal or absolute
-    path injection.
+    Supports two ``script_path`` formats:
+
+    * ``<filename>`` — resolved within ``HERMES_HOME/scripts/``
+      (existing behaviour).
+    * ``skills/<skill_name>/<relative_path>`` — resolved within the
+      named skill's ``scripts/`` directory (see
+      :func:`~tools.path_security.resolve_cron_script_path`).
 
     Supported interpreters (chosen by file extension):
 
@@ -3506,9 +3509,13 @@ def _run_job_script(
     (SECURITY.md §2.3), matching terminal and MCP child processes.
 
     Args:
-        script_path: Path to the script.  Relative paths are resolved
-            against HERMES_HOME/scripts/.  Absolute and ~-prefixed paths
-            are also validated to ensure they stay within the scripts dir.
+        script_path: Path to the script.  Resolution is delegated to
+            ``resolve_cron_script_path`` which supports these conventions:
+            * ``<filename>`` — resolved within ``HERMES_HOME/scripts/``
+            * ``skills/<skill_name>/<path>`` — resolved within the
+              named skill's ``scripts/`` directory
+            Absolute and ~-prefixed paths are also validated for
+            containment within the allowed directory.
         workdir: Optional absolute path to use as the script's cwd.
             When set, the subprocess runs in this directory instead of
             the scripts-dir parent.  The Python process cwd is NEVER
@@ -3520,47 +3527,13 @@ def _run_job_script(
         (success, output) — on failure *output* contains the error message so the
         LLM can report the problem to the user.
     """
-    scripts_dir = _get_hermes_home() / "scripts"
-    scripts_dir.mkdir(parents=True, exist_ok=True)
-    scripts_dir_resolved = scripts_dir.resolve()
+    from tools.path_security import resolve_cron_script_path
 
-    # Same ingestion contract as cron.lifecycle_guard._expand_candidate_path:
-    # a NUL-bearing value can never name a real script, and on Windows the
-    # Path operations raise ValueError *after* expanduser (expanduser never
-    # expands "~user" there, so the try below never fires) — reject eagerly
-    # so both platforms fail cleanly instead of crashing the scheduler.
-    # str() first so the guard itself can never raise TypeError on a
-    # non-str script_path (e.g. a Path passed by a future caller) — the
-    # guard must be crash-proof even though every current call site
-    # passes a plain str (#86832 review).
-    if "\x00" in str(script_path):
-        return False, f"Blocked: script path contains a NUL byte: {script_path!r}"
+    resolved, error = resolve_cron_script_path(script_path, _get_hermes_home())
+    if error:
+        return False, error
 
-    try:
-        raw = Path(script_path).expanduser()
-    except (ValueError, RuntimeError, OSError):
-        # Same ingestion contract as cron.lifecycle_guard: a NUL-bearing
-        # value (ValueError) or an unexpandable ``~`` (RuntimeError with no
-        # resolvable HOME) can never name a real script. The creation-time
-        # guard tolerates such values as "nothing to scan", so they can
-        # reach fire time — fail the run with a report instead of crashing
-        # the scheduler with an unhandled exception.
-        return False, f"Blocked: script path is not a valid filesystem path: {script_path!r}"
-    if raw.is_absolute():
-        path = raw.resolve()
-    else:
-        path = (scripts_dir / raw).resolve()
-
-    # Guard against path traversal, absolute path injection, and symlink
-    # escape — scripts MUST reside within HERMES_HOME/scripts/.
-    try:
-        path.relative_to(scripts_dir_resolved)
-    except ValueError:
-        return False, (
-            f"Blocked: script path resolves outside the scripts directory "
-            f"({scripts_dir_resolved}): {script_path!r}"
-        )
-
+    path = resolved
     if not path.exists():
         return False, f"Script not found: {path}"
     if not path.is_file():
