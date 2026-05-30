@@ -289,8 +289,9 @@ def _validate_cron_base_url(
 
 
 def _validate_cron_script_path(script: Optional[str]) -> Optional[str]:
-    """Scripts must be relative paths within HERMES_HOME/scripts/ (absolute / ~ / drive-letter
-    rejected — prompt-injection guard). Error string if blocked, else None; empty = clear."""
+    """Scripts resolve via ``resolve_cron_script_path`` — relative within HERMES_HOME/scripts/
+    or the ``skills/<skill_name>/<path>`` convention. Absolute / ~ / drive-letter rejected
+    (prompt-injection guard). Error string if blocked, else None; empty = clear."""
     if not script or not script.strip():
         return None
 
@@ -302,12 +303,9 @@ def _validate_cron_script_path(script: Optional[str]) -> Optional[str]:
             f"Got absolute or home-relative path: {raw!r}. "
             f"Place scripts in ~/.hermes/scripts/ and use just the filename.")
 
-    from tools.path_security import validate_within_dir
-    scripts_dir = get_hermes_home() / "scripts"
-    scripts_dir.mkdir(parents=True, exist_ok=True)
-    if validate_within_dir(scripts_dir / raw, scripts_dir):
-        return f"Script path escapes the scripts directory via traversal: {raw!r}"
-    return None
+    from tools.path_security import resolve_cron_script_path
+    _, error = resolve_cron_script_path(raw, get_hermes_home())
+    return error
 
 
 def _apply_continuity(
