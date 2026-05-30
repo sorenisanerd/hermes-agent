@@ -851,10 +851,13 @@ def _get_script_timeout() -> int:
 def _run_job_script(script_path: str) -> tuple[bool, str]:
     """Execute a cron job's data-collection script and capture its output.
 
-    Scripts must reside within HERMES_HOME/scripts/.  Both relative and
-    absolute paths are resolved and validated against this directory to
-    prevent arbitrary script execution via path traversal or absolute
-    path injection.
+    Supports two ``script_path`` formats:
+
+    * ``<filename>`` — resolved within ``HERMES_HOME/scripts/``
+      (existing behaviour).
+    * ``skills/<skill_name>/<relative_path>`` — resolved within the
+      named skill's ``scripts/`` directory (see
+      :func:`~tools.path_security.resolve_cron_script_path`).
 
     Supported interpreters (chosen by file extension):
 
@@ -867,34 +870,19 @@ def _run_job_script(script_path: str) -> tuple[bool, str]:
     (the `memory-watchdog.sh` pattern) without wrapping them in Python.
 
     Args:
-        script_path: Path to the script.  Relative paths are resolved
-            against HERMES_HOME/scripts/.  Absolute and ~-prefixed paths
-            are also validated to ensure they stay within the scripts dir.
+        script_path: Path to the script.
 
     Returns:
         (success, output) — on failure *output* contains the error message so the
         LLM can report the problem to the user.
     """
-    scripts_dir = _get_hermes_home() / "scripts"
-    scripts_dir.mkdir(parents=True, exist_ok=True)
-    scripts_dir_resolved = scripts_dir.resolve()
+    from tools.path_security import resolve_cron_script_path
 
-    raw = Path(script_path).expanduser()
-    if raw.is_absolute():
-        path = raw.resolve()
-    else:
-        path = (scripts_dir / raw).resolve()
+    resolved, error = resolve_cron_script_path(script_path, _get_hermes_home())
+    if error:
+        return False, error
 
-    # Guard against path traversal, absolute path injection, and symlink
-    # escape — scripts MUST reside within HERMES_HOME/scripts/.
-    try:
-        path.relative_to(scripts_dir_resolved)
-    except ValueError:
-        return False, (
-            f"Blocked: script path resolves outside the scripts directory "
-            f"({scripts_dir_resolved}): {script_path!r}"
-        )
-
+    path = resolved
     if not path.exists():
         return False, f"Script not found: {path}"
     if not path.is_file():
