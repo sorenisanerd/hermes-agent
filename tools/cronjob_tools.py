@@ -908,7 +908,9 @@ def cronjob(
 
 def _script_description(home: str) -> str:
     return (f"Optional script run each tick; stdout is injected into the agent's prompt as context (with no_agent=True "
-            f"the script IS the job). Relative paths resolve under {home}/scripts/; .sh/.bash via bash, else Python. "
+            f"the script IS the job). Relative paths resolve under {home}/scripts/; "
+            "the prefix skills/<skill_name>/ resolves to that skill's scripts/ directory. "
+            ".sh/.bash via bash, else Python. "
             "On update, '' clears.")
 
 

@@ -257,7 +257,22 @@ def _windows_cron_bootstrap_argv(
 def _resolve_script_path(script_path: str) -> tuple[Optional[Path], Optional[str]]:
     """Validate a job script path; ``(path, None)`` or ``(None, error)``. Scripts MUST resolve
     inside HERMES_HOME/scripts/ (relative, absolute and ``~`` paths are all validated — path
-    traversal / absolute-path injection); contract of lifecycle_guard._expand_candidate_path."""
+    traversal / absolute-path injection); the ``skills/<skill_name>/<path>`` convention resolves
+    within the named skill's ``scripts/`` dir; contract of lifecycle_guard._expand_candidate_path."""
+    # skills/<skill>/<path> convention: delegate skill-dir lookup + containment to the shared
+    # resolver (see tools.path_security.resolve_cron_script_path).
+    if str(script_path).strip().startswith("skills/"):
+        from tools.path_security import resolve_cron_script_path
+
+        path, error = resolve_cron_script_path(script_path, _sched._get_hermes_home())
+        if path is None:
+            return None, error
+        if not path.exists():
+            return None, f"Script not found: {path}"
+        if not path.is_file():
+            return None, f"Script path is not a file: {path}"
+        return path, None
+
     scripts_dir = _sched._get_hermes_home() / "scripts"
     _ensure_cron_dir(scripts_dir)
     scripts_dir_resolved = scripts_dir.resolve()
