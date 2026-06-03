@@ -1132,13 +1132,15 @@ def _get_approval_timeout() -> int:
 
 
 def _get_cron_approval_mode() -> str:
-    """Read the cron approval mode from config. Returns 'deny' or 'approve'."""
+    """Read the cron approval mode from config. Returns 'deny', 'approve', or 'smart'."""
     try:
         from hermes_cli.config import load_config
         config = load_config()
         mode = str(cfg_get(config, "approvals", "cron_mode", default="deny")).lower().strip()
         if mode in {"approve", "off", "allow", "yes"}:
             return "approve"
+        if mode == "smart":
+            return "smart"
         return "deny"
     except Exception:
         return "deny"
@@ -1575,7 +1577,8 @@ def check_all_command_guards(command: str, env_type: str,
     if not is_cli and not is_gateway and not is_ask:
         # Cron sessions: respect cron_mode config
         if env_var_enabled("HERMES_CRON_SESSION"):
-            if _get_cron_approval_mode() == "deny":
+            cron_mode = _get_cron_approval_mode()
+            if cron_mode == "deny":
                 # Run detection to get a description for the block message
                 is_dangerous, _pk, description = detect_dangerous_command(command)
                 if is_dangerous:
@@ -1589,6 +1592,27 @@ def check_all_command_guards(command: str, env_type: str,
                             "approvals.cron_mode: approve in config.yaml."
                         ),
                     }
+            elif cron_mode == "smart":
+                # Run detection through smart approval (Gemini evaluates risk)
+                is_dangerous, _pk, description = detect_dangerous_command(command)
+                if is_dangerous:
+                    verdict = _smart_approve(command, description)
+                    if verdict == "approve":
+                        logger.debug(
+                            "Smart approval (cron): auto-approved '%s' (%s)",
+                            command[:60], description,
+                        )
+                    else:
+                        return {
+                            "approved": False,
+                            "message": (
+                                f"BLOCKED by smart approval: Command flagged as "
+                                f"dangerous ({description}) in a cron job and the "
+                                f"auxiliary LLM assessed it as potentially harmful. "
+                                f"Cron jobs run without a user present to approve it. "
+                                f"Find an alternative approach that avoids this command."
+                            ),
+                        }
         return {"approved": True, "message": None}
 
     # --- Phase 1: Gather findings from both checks ---
