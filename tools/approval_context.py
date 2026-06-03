@@ -268,8 +268,17 @@ def _binary_approval_mode(key: str) -> str:
 
 
 def _get_cron_approval_mode() -> str:
-    """Read the cron approval mode from config. Returns 'deny' or 'approve'."""
-    return _binary_approval_mode("cron_mode")
+    """Read the cron approval mode from config. Returns 'deny', 'approve', or 'smart'."""
+    try:
+        from hermes_cli.config import load_config_readonly
+        mode = str(cfg_get(load_config_readonly(), "approvals", "cron_mode", default="deny")).lower().strip()
+        if mode in {"approve", "off", "allow", "yes"}:
+            return "approve"
+        if mode == "smart":
+            return "smart"
+        return "deny"
+    except Exception:
+        return "deny"
 
 
 def _get_single_query_approval_mode() -> str:
