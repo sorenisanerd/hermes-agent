@@ -36,7 +36,7 @@ from tools.approval_floors import (
 )
 from tools.approval_gateway_wait import _await_gateway_decision
 from tools.approval_prompt import _present_with_selected_transport, _transport_choice, prompt_dangerous_approval
-from tools.approval_smart import _smart_verdict
+from tools.approval_smart import _smart_approve, _smart_verdict
 
 logger = logging.getLogger(__name__)
 
@@ -568,6 +568,30 @@ def _unattended_deny(command: str, ctx: _Unattended) -> dict | None:
     return None
 
 
+def _unattended_smart(command: str, ctx: _Unattended) -> dict | None:
+    """Smart-mode handling for cron (``cron_mode: smart``): a flagged command is assessed by the
+    guardian LLM instead of a binary deny. APPROVE allows; DENY/ESCALATE block. None = allow."""
+    if ctx.mode() != "smart":
+        return None
+    is_dangerous, _pk, description = detect_dangerous_command(command)
+    if not is_dangerous:
+        return None
+    verdict = _smart_approve(command, description)
+    if verdict == "approve":
+        logger.debug("Smart approval (cron): auto-approved '%s' (%s)", command[:60], description)
+        return None
+    return {
+        "approved": False,
+        "message": (
+            f"BLOCKED by smart approval: Command flagged as "
+            f"dangerous ({description}) in a cron job and the "
+            f"auxiliary LLM assessed it as potentially harmful. "
+            f"Cron jobs run without a user present to approve it. "
+            f"Find an alternative approach that avoids this command."
+        ),
+    }
+
+
 # --- Human-decision engine shared by the three gates ----------------------------------------------------------------
 # Every flagged action reaches a human the same way — selected plugin transport → gateway round-trip → pending
 # fallback → CLI prompt → persist — so the consent contract (silence is not consent, deny is a hard halt, a smart-DENY
@@ -1050,6 +1074,10 @@ def check_all_command_guards(command: str, env_type: str,
             result = _unattended_deny(command, ctx)
             if result is not None:
                 return result
+            if ctx.name == "cron" and ctx.mode() == "smart":
+                result = _unattended_smart(command, ctx)
+                if result is not None:
+                    return result
         return _approved()
 
     # Gather findings: warnings = [(pattern_key, description, is_tirith)]. Tirith block AND warn both go through the
