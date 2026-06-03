@@ -72,6 +72,12 @@ class TestCronApprovalModeParsing:
         with mock_patch("hermes_cli.config.load_config_readonly", return_value={"approvals": {"cron_mode": "maybe"}}):
             assert _get_cron_approval_mode() == "deny"
 
+    def test_smart_mode_preserved(self):
+        """cron_mode: smart is a distinct mode, not folded into approve/deny."""
+        from unittest.mock import patch as mock_patch
+        with mock_patch("hermes_cli.config.load_config_readonly", return_value={"approvals": {"cron_mode": "smart"}}):
+            assert _get_cron_approval_mode() == "smart"
+
     def test_config_load_failure_defaults_to_deny(self):
         """If config loading fails entirely, default to deny (safe)."""
         from unittest.mock import patch as mock_patch
@@ -366,6 +372,71 @@ class TestCronDenyModeAllGuards:
         ):
             result = check_all_command_guards("echo hi", "local")
             assert result["approved"]
+
+
+# ---------------------------------------------------------------------------
+# check_all_command_guards() with cron session + cron_mode=smart
+# ---------------------------------------------------------------------------
+
+class TestCronSmartModeAllGuards:
+    """cron_mode=smart routes dangerous commands through the auxiliary-LLM
+    smart-approval verdict instead of hard-blocking or auto-approving."""
+
+    def _cron_env(self, monkeypatch):
+        monkeypatch.setenv("HERMES_CRON_SESSION", "1")
+        monkeypatch.delenv("HERMES_INTERACTIVE", raising=False)
+        monkeypatch.delenv("HERMES_GATEWAY_SESSION", raising=False)
+        monkeypatch.delenv("HERMES_EXEC_ASK", raising=False)
+        monkeypatch.delenv("HERMES_YOLO_MODE", raising=False)
+
+    def test_smart_verdict_approve_allows(self, monkeypatch):
+        """Dangerous command + smart verdict 'approve' → allowed."""
+        self._cron_env(monkeypatch)
+        from unittest.mock import patch as mock_patch
+        with (
+            mock_patch("tools.approval._get_cron_approval_mode", return_value="smart"),
+            mock_patch("tools.approval._smart_approve", return_value="approve"),
+        ):
+            result = check_all_command_guards("rm -rf /tmp/stuff", "local")
+            assert result["approved"]
+
+    def test_smart_verdict_deny_blocks(self, monkeypatch):
+        """Dangerous command + smart verdict 'deny' → blocked with smart message."""
+        self._cron_env(monkeypatch)
+        from unittest.mock import patch as mock_patch
+        with (
+            mock_patch("tools.approval._get_cron_approval_mode", return_value="smart"),
+            mock_patch("tools.approval._smart_approve", return_value="deny"),
+        ):
+            result = check_all_command_guards("rm -rf /tmp/stuff", "local")
+            assert not result["approved"]
+            assert "smart approval" in result["message"].lower()
+
+    def test_smart_verdict_escalate_blocks(self, monkeypatch):
+        """An uncertain (escalate) verdict is treated as a block — a cron job
+        has no user present to approve, so fail closed."""
+        self._cron_env(monkeypatch)
+        from unittest.mock import patch as mock_patch
+        with (
+            mock_patch("tools.approval._get_cron_approval_mode", return_value="smart"),
+            mock_patch("tools.approval._smart_approve", return_value="escalate"),
+        ):
+            result = check_all_command_guards("rm -rf /tmp/stuff", "local")
+            assert not result["approved"]
+            assert "smart approval" in result["message"].lower()
+
+    def test_smart_safe_command_does_not_invoke_llm(self, monkeypatch):
+        """A safe command in smart mode is allowed WITHOUT calling the
+        auxiliary LLM (no unnecessary token spend)."""
+        self._cron_env(monkeypatch)
+        from unittest.mock import patch as mock_patch
+        with (
+            mock_patch("tools.approval._get_cron_approval_mode", return_value="smart"),
+            mock_patch("tools.approval._smart_approve") as mock_smart,
+        ):
+            result = check_all_command_guards("echo hello", "local")
+            assert result["approved"]
+            mock_smart.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
