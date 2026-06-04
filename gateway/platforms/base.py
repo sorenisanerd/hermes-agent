@@ -4578,16 +4578,21 @@ class BasePlatformAdapter(ABC):
         blocks, or compact symbols to the speech provider.  It should receive
         a transcript-like script: reasoning blocks removed, headings and
         bullets flattened into sentence pauses, and units like ``°C``
-        expanded to words such as ``degrees Celsius``.
+        expanded to words such as ``degrees Celsius``.  The runtime footer
+        metadata is stripped first so it is never spoken aloud.
 
         Provider-safe chunking and platform delivery limits are enforced
         by the TTS tool.
         """
         try:
+            from gateway.runtime_footer import strip_runtime_footer
             from tools.tts_text_normalize import prepare_spoken_text
-            return prepare_spoken_text(text, max_chars=None)
+            stripped = strip_runtime_footer(text)
+            return prepare_spoken_text(stripped, max_chars=4000)
         except Exception:
             # Keep auto-TTS best-effort if the normalizer ever fails.
+            from gateway.runtime_footer import strip_runtime_footer
+            text = strip_runtime_footer(text)
             text = re.sub(r'<think[\s>].*?</think>', ' ', text, flags=re.DOTALL)
             return re.sub(r'[*_`#\[\]()]', '', text).strip()
 
