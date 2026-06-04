@@ -13,7 +13,45 @@ from gateway.runtime_footer import (
     build_footer_line,
     format_runtime_footer,
     resolve_footer_config,
+    strip_runtime_footer,
 )
+
+
+# ---------------------------------------------------------------------------
+# strip_runtime_footer — remove the trailing footer so TTS never speaks it
+# ---------------------------------------------------------------------------
+
+
+def test_strip_footer_removes_trailing_footer_line():
+    body = "Here is your summary."
+    text = f"{body}\n\ngpt-5.4 · 5% · ~/projects"
+    assert strip_runtime_footer(text) == body
+
+
+def test_strip_footer_preserves_body_without_separator():
+    text = "Single line, no double newline"
+    assert strip_runtime_footer(text) == text
+
+
+def test_strip_footer_preserves_multiline_body_without_footer():
+    text = "First paragraph.\n\nSecond paragraph, still body."
+    # Last \n\n segment is long body text (no separator marker) — kept.
+    assert strip_runtime_footer(text) == text
+
+
+def test_strip_footer_keeps_long_last_segment():
+    # A footer is short (<100 chars). A long final paragraph with a · must not
+    # be mistaken for a footer.
+    body = "Intro."
+    long_last = "x" * 200 + " · but long"
+    text = f"{body}\n\n{long_last}"
+    assert strip_runtime_footer(text) == text
+
+
+def test_strip_footer_keeps_segment_without_separator():
+    # Last segment has no middle-dot field separator — not a footer.
+    text = "Body.\n\nJust some trailing words"
+    assert strip_runtime_footer(text) == text
 
 
 # ---------------------------------------------------------------------------
