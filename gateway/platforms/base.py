@@ -3161,9 +3161,12 @@ class BasePlatformAdapter(ABC):
     def prepare_tts_text(self, text: str) -> str:
         """Prepare text for TTS. Override to filter tool output, code, etc.
 
-        Default strips markdown formatting and truncates to 4000 chars.
+        Default strips markdown formatting, truncates to 4000 chars,
+        and removes the runtime footer so metadata isn't spoken.
         """
-        return re.sub(r'[*_`#\[\]()]', '', text)[:4000].strip()
+        from gateway.runtime_footer import strip_runtime_footer
+        stripped = strip_runtime_footer(text)
+        return re.sub(r'[*_`#\[\]()]', '', stripped)[:4000].strip()
 
     async def play_tts(
         self,

@@ -122,6 +122,23 @@ def format_runtime_footer(
     return _SEP.join(parts)
 
 
+def strip_runtime_footer(text: str) -> str:
+    """Remove the runtime footer line from a response string if present.
+
+    The footer is appended as the last ``\\n\\n``-separated segment in the
+    format ``model · XX% · ~/path``.  Stripping it here means TTS consumers
+    don't need to know what the current footer contains.
+    """
+    _sep = "\n\n"
+    if _sep not in text:
+        return text
+    body, last = text.rsplit(_sep, 1)
+    # Footer lines contain the middle-dot field separator and are short
+    if "·" in last and len(last) < 100:
+        return body
+    return text
+
+
 def build_footer_line(
     *,
     user_config: dict[str, Any] | None,
