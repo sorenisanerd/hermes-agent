@@ -2708,13 +2708,17 @@ class BasePlatformAdapter(ABC):
 
     def prepare_tts_text(self, text: str) -> str:
         """Chat Markdown -> transcript-like spoken script (reasoning blocks removed,
-        headings/bullets flattened, units expanded). Chunking and delivery limits are the TTS tool's
-        job."""
+        headings/bullets flattened, units expanded); the runtime footer is stripped first so it is
+        never spoken aloud. Chunking and delivery limits are the TTS tool's job."""
         try:
+            from gateway.runtime_footer import strip_runtime_footer
             from tools.tts_text_normalize import prepare_spoken_text
-            return prepare_spoken_text(text, max_chars=None)
+            stripped = strip_runtime_footer(text)
+            return prepare_spoken_text(stripped, max_chars=4000)
         except Exception:
             # Keep auto-TTS best-effort if the normalizer ever fails.
+            from gateway.runtime_footer import strip_runtime_footer
+            text = strip_runtime_footer(text)
             text = re.sub(r'<think[\s>].*?</think>', ' ', text, flags=re.DOTALL)
             return re.sub(r'[*_`#\[\]()]', '', text).strip()
 
