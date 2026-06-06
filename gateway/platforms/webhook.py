@@ -31,6 +31,8 @@ except ImportError:
     web = None  # type: ignore[assignment]
 
 from gateway.config import Platform, PlatformConfig
+from gateway.delivery import _is_silence_narration
+from gateway.runtime_footer import strip_runtime_footer
 from gateway.platforms.base import BasePlatformAdapter, SendResult
 from gateway.platforms.event import MessageEvent, MessageType
 from gateway.platforms.webhook_filters import DEFAULT_SCRIPT_TIMEOUT_SECONDS, WebhookRouteProcessor
@@ -253,11 +255,27 @@ class WebhookAdapter(BasePlatformAdapter):
                    metadata: Optional[Dict[str, Any]] = None) -> SendResult:
         """Deliver the agent's response to the destination stored for ``chat_id``
         (``webhook:{route}:{delivery_id}``) — read with ``.get()``, never popped."""
-        # Autonomous lane (no human reader): the loose marker matcher shared with cron (marker on its own
-        # first/last line), because models add a sentence explaining why they stayed quiet, which the
-        # interactive exact-match rule would deliver.
-        if is_autonomous_silence_response(content):
-            logger.info("[webhook] Response for %s is a silence marker — not delivering", chat_id)
+        # Filter silence narration — same logic as cron delivery. The agent can
+        # suppress uninteresting events by responding "silent", "no response",
+        # 🔇, etc.  Respects HERMES_FILTER_SILENCE_NARRATION (default: enabled).
+        # Strip the runtime footer (model · XX% · ~) first — it gets appended
+        # after the agent's response but before send().
+        stripped = strip_runtime_footer(content)
+        env = os.getenv("HERMES_FILTER_SILENCE_NARRATION")
+        filter_enabled = (
+            env.strip().lower() in ("1", "true", "yes", "on")
+            if env is not None
+            else True
+        )
+        # Keep BOTH the ``[SILENT]`` / loose-marker protocol
+        # (is_autonomous_silence_response) AND the cron-style narration tokens
+        # (_is_silence_narration).  Replacing the former with the latter would
+        # silently deliver ``[SILENT]`` responses.
+        if filter_enabled and (
+            is_autonomous_silence_response(stripped)
+            or _is_silence_narration(stripped)
+        ):
+            logger.info("[webhook] Dropped silence-narration for %s: %r", chat_id, stripped[:40])
             return SendResult(success=True)
         delivery = self._delivery_info.get(chat_id, {})
         deliver_type = delivery.get("deliver", "log")
