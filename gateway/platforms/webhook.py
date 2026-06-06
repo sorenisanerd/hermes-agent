@@ -37,6 +37,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -53,6 +54,8 @@ except ImportError:
     web = None  # type: ignore[assignment]
 
 from gateway.config import Platform, PlatformConfig
+from gateway.delivery import _is_silence_narration
+from gateway.runtime_footer import strip_runtime_footer
 from gateway.platforms.base import (
     BasePlatformAdapter,
     MessageEvent,
@@ -366,9 +369,33 @@ class WebhookAdapter(BasePlatformAdapter):
         do not consume the entry and silently downgrade the final response
         to the ``log`` deliver type.  TTL cleanup happens on POST.
         """
-        if _is_webhook_silence_response(content):
+
+        # Filter silence narration — same logic as cron delivery.
+        # Agent can suppress uninteresting events by responding with
+        # "silent", "no response", 🔇, etc.  Respects the
+        # HERMES_FILTER_SILENCE_NARRATION env var (default: enabled).
+        #
+        # Strip the runtime footer (model · XX% · ~) first — it gets
+        # appended after the agent's response but before send().
+        stripped = strip_runtime_footer(content)
+        env = os.getenv("HERMES_FILTER_SILENCE_NARRATION")
+        filter_enabled = (
+            env.strip().lower() in ("1", "true", "yes", "on")
+            if env is not None
+            else True
+        )
+        # Keep BOTH the webhook's documented ``[SILENT]`` protocol (matched by
+        # _is_webhook_silence_response / is_autonomous_silence_response) AND the
+        # cron-style narration tokens (_is_silence_narration).  Replacing the
+        # former with the latter would silently deliver ``[SILENT]`` responses.
+        if filter_enabled and (
+            _is_webhook_silence_response(stripped)
+            or _is_silence_narration(stripped)
+        ):
             logger.info(
-                "[webhook] Response for %s is a silence marker — not delivering", chat_id
+                "[webhook] Dropped silence-narration for %s: %r",
+                chat_id,
+                stripped[:40],
             )
             return SendResult(success=True)
 

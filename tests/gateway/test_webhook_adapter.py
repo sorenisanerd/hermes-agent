@@ -724,6 +724,55 @@ class TestWebhookSilenceSuppression:
         assert result.success is True
         target.send.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_narration_token_is_not_delivered(self):
+        """The cron-style narration tokens (``silent``, ``no response``, 🔇) are
+        filtered too, not just the bracketed ``[SILENT]`` protocol marker."""
+        adapter, target, chat_id = self._adapter_with_mock_target()
+
+        for token in ("silent", "no response", "🔇"):
+            result = await adapter.send(chat_id, token)
+            assert result.success is True
+        target.send.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_footer_is_stripped_before_silence_detection(self):
+        """A silence marker with the runtime footer appended (``silent\\n\\n
+        model · 5% · ~/path``) must still be filtered — the footer is added
+        after the agent's response but before send()."""
+        adapter, target, chat_id = self._adapter_with_mock_target()
+
+        result = await adapter.send(
+            chat_id, "silent\n\ngpt-5.4 · 5% · ~/projects"
+        )
+
+        assert result.success is True
+        target.send.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_filter_disabled_via_env_delivers(self, monkeypatch):
+        """HERMES_FILTER_SILENCE_NARRATION=0 must turn the filter off, so even
+        an explicit silence marker is delivered (operator opted out)."""
+        adapter, target, chat_id = self._adapter_with_mock_target()
+        monkeypatch.setenv("HERMES_FILTER_SILENCE_NARRATION", "0")
+
+        result = await adapter.send(chat_id, "[SILENT]")
+
+        assert result.success is True
+        target.send.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_filter_enabled_via_env_filters(self, monkeypatch):
+        """An explicit truthy env value keeps the filter on."""
+        adapter, target, chat_id = self._adapter_with_mock_target()
+        monkeypatch.setenv("HERMES_FILTER_SILENCE_NARRATION", "true")
+
+        result = await adapter.send(chat_id, "[SILENT]")
+
+        assert result.success is True
+        target.send.assert_not_awaited()
+
+
 
 # ===================================================================
 # Delivery info cleanup
