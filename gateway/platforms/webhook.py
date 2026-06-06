@@ -50,6 +50,7 @@ except ImportError:
 
 from gateway.config import Platform, PlatformConfig
 from gateway.delivery import _is_silence_narration
+from gateway.runtime_footer import strip_runtime_footer
 from gateway.platforms.base import (
     BasePlatformAdapter,
     MessageEvent,
@@ -259,17 +260,21 @@ class WebhookAdapter(BasePlatformAdapter):
         # Agent can suppress uninteresting events by responding with
         # "silent", "no response", 🔇, etc.  Respects the
         # HERMES_FILTER_SILENCE_NARRATION env var (default: enabled).
+        #
+        # Strip the runtime footer (model · XX% · ~) first — it gets
+        # appended after the agent's response but before send().
+        stripped = strip_runtime_footer(content)
         env = os.getenv("HERMES_FILTER_SILENCE_NARRATION")
         filter_enabled = (
             env.strip().lower() in ("1", "true", "yes", "on")
             if env is not None
             else True
         )
-        if filter_enabled and _is_silence_narration(content):
+        if filter_enabled and _is_silence_narration(stripped):
             logger.info(
                 "[webhook] Dropped silence-narration for %s: %r",
                 chat_id,
-                content[:40],
+                stripped[:40],
             )
             return SendResult(success=True)
 
