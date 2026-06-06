@@ -35,6 +35,8 @@ except ImportError:
     web = None  # type: ignore[assignment]
 
 from gateway.config import Platform, PlatformConfig
+from gateway.delivery import _is_silence_narration
+from gateway.runtime_footer import strip_runtime_footer
 from gateway.platforms.base import BasePlatformAdapter, SendResult
 from gateway.platforms.event import MessageEvent, MessageType
 from gateway.platforms.tcp_site import start_tcp_site
@@ -304,7 +306,22 @@ class WebhookAdapter(BasePlatformAdapter):
         # Autonomous lane (no human reader): the loose marker matcher shared with cron (marker on its own
         # first/last line), because models add a sentence explaining why they stayed quiet, which the
         # interactive exact-match rule would deliver.
-        if is_autonomous_silence_response(content):
+        # Strip the runtime footer (model · XX% · ~) first: it is appended after the agent's response
+        # but before send(), and its length would otherwise push a bare marker past the marker-size cap
+        # (64 chars) so it read as ordinary prose.  Then filter the cron-style narration tokens too
+        # ("silent", "no response", 🔇) — but keep the ``[SILENT]`` / loose-marker protocol as well,
+        # since replacing it with the narration matcher alone would silently deliver ``[SILENT]``.
+        stripped = strip_runtime_footer(content)
+        env = os.getenv("HERMES_FILTER_SILENCE_NARRATION")
+        filter_enabled = (
+            env.strip().lower() in ("1", "true", "yes", "on")
+            if env is not None
+            else True
+        )
+        if filter_enabled and (
+            is_autonomous_silence_response(stripped)
+            or _is_silence_narration(stripped)
+        ):
             logger.info("[webhook] Response for %s is a silence marker — not delivering", chat_id)
             return SendResult(success=True)
         delivery = self._delivery_info.get(chat_id, {})
