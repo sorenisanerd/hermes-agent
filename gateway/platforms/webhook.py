@@ -33,6 +33,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import re
 import subprocess
 import time
@@ -48,6 +49,7 @@ except ImportError:
     web = None  # type: ignore[assignment]
 
 from gateway.config import Platform, PlatformConfig
+from gateway.delivery import _is_silence_narration
 from gateway.platforms.base import (
     BasePlatformAdapter,
     MessageEvent,
@@ -252,6 +254,25 @@ class WebhookAdapter(BasePlatformAdapter):
         do not consume the entry and silently downgrade the final response
         to the ``log`` deliver type.  TTL cleanup happens on POST.
         """
+
+        # Filter silence narration — same logic as cron delivery.
+        # Agent can suppress uninteresting events by responding with
+        # "silent", "no response", 🔇, etc.  Respects the
+        # HERMES_FILTER_SILENCE_NARRATION env var (default: enabled).
+        env = os.getenv("HERMES_FILTER_SILENCE_NARRATION")
+        filter_enabled = (
+            env.strip().lower() in ("1", "true", "yes", "on")
+            if env is not None
+            else True
+        )
+        if filter_enabled and _is_silence_narration(content):
+            logger.info(
+                "[webhook] Dropped silence-narration for %s: %r",
+                chat_id,
+                content[:40],
+            )
+            return SendResult(success=True)
+
         delivery = self._delivery_info.get(chat_id, {})
         deliver_type = delivery.get("deliver", "log")
 
