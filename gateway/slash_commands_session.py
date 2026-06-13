@@ -196,6 +196,18 @@ class GatewaySessionCommandsMixin:
         _title_arg = event.get_command_args().strip()
         if _title_arg and self._session_db and new_entry:
             header = await self._reset_titled_header(header, new_entry.session_id, _title_arg)
+        # Add a recovery hint so the user knows how to get back to the old session.
+        if _old_sid and self._session_db:
+            try:
+                _old_title = await self._session_db.get_session_title(_old_sid)
+                if _old_title:
+                    header += (
+                        "\n\n💡 Previous session saved as **{title}**. "
+                        "Recover with: `/resume {title}` or `/resume 1`"
+                        .format(title=_old_title)
+                    )
+            except Exception:
+                pass
         # Telegram DM topic lane: rebind (chat_id, thread_id) → session_id so the next message uses
         # the fresh session instead of switching back to the old one.
         if await asyncio.to_thread(self._is_telegram_topic_lane, source) and new_entry is not None:

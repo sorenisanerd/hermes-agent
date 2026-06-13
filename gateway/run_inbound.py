@@ -782,10 +782,8 @@ class GatewayInboundMixin:
     async def _hm_cmd_new(self, event, source, _quick_key):
         if await asyncio.to_thread(self._is_telegram_topic_root_lobby, source):
             return True, self._telegram_topic_root_new_message()
-        return await self._hm_confirm_destructive(
-            event, "new", "This starts a fresh session and discards the current conversation history.",
-            self._handle_reset_command,
-        )
+        # /new is recoverable via /resume — no destructive-confirmation gate.
+        return True, await self._handle_reset_command(event)
 
     async def _hm_cmd_start(self, event, source, _quick_key):
         logger.info("Ignoring /start platform ping for session %s", _quick_key)
