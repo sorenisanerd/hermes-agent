@@ -968,14 +968,11 @@ class GatewayInboundMixin(
     async def _hm_cmd_new(self, event, source, _quick_key):
         if await asyncio.to_thread(self._is_telegram_topic_root_lobby, source):
             return True, self._telegram_topic_root_new_message()
-        # A plugin turn waiting before its agent exists leaves the chat idle here, so /new asks
-        # first: the person's command still ends that turn's wait for background work at once.
+        # The person's command still ends a waiting plugin turn's wait for background work at once.
         from gateway.run_plugin_injection import person_input_joined_turn
         person_input_joined_turn(self, _quick_key)
-        return await self._hm_confirm_destructive(
-            event, "new", t("gateway.confirm.detail_new"),
-            self._handle_reset_command,
-        )
+        # /new is recoverable via /resume — no destructive-confirmation gate.
+        return True, await self._handle_reset_command(event)
 
     async def _hm_cmd_start(self, event, source, _quick_key):
         logger.info("Ignoring /start platform ping for session %s", _quick_key)
