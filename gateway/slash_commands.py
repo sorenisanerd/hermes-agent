@@ -257,6 +257,19 @@ class GatewaySlashCommandsMixin:
                 _title_note = t("gateway.reset.title_empty_untitled")
         header = header + _title_note
 
+        # Add a recovery hint so the user knows how to get back to the old session
+        if _old_sid and self._session_db:
+            try:
+                _old_title = self._session_db.get_session_title(_old_sid)
+                if _old_title:
+                    header += (
+                        "\n\n💡 Previous session saved as **{title}**. "
+                        "Recover with: `/resume {title}` or `/resume 1`"
+                        .format(title=_old_title)
+                    )
+            except Exception:
+                pass
+
         # When /new runs inside a Telegram DM topic lane, rewrite the
         # (chat_id, thread_id) → session_id binding so the next message
         # uses the freshly-created session. Without this, the binding

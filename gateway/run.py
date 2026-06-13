@@ -8585,18 +8585,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if canonical == "new":
             if self._is_telegram_topic_root_lobby(source):
                 return self._telegram_topic_root_new_message()
-            async def _do_reset():
-                return await self._handle_reset_command(event)
-            return await self._maybe_confirm_destructive_slash(
-                event=event,
-                command="new",
-                title="/new",
-                detail=(
-                    "This starts a fresh session and discards the current "
-                    "conversation history."
-                ),
-                execute=_do_reset,
-            )
+            return await self._handle_reset_command(event)
 
         if canonical == "topic":
             return await self._handle_topic_command(event)
