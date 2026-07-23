@@ -351,6 +351,7 @@ class TestPluginDiscovery:
         non_bundled = {
             n: p for n, p in mgr._plugins.items()
             if p.manifest.source != "bundled"
+            and p.manifest.source != "entrypoint"
         }
         assert len(non_bundled) == 1
 

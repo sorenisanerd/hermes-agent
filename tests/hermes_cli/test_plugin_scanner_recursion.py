@@ -109,6 +109,7 @@ class TestCategoryNamespaceRecursion:
         non_bundled = [
             k for k, p in mgr._plugins.items()
             if p.manifest.source != "bundled"
+            and p.manifest.source != "entrypoint"
         ]
         assert non_bundled == []
 

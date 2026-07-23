@@ -114,7 +114,7 @@ class TestDiscoverAllPlugins:
         mock_user_dir.return_value = tmp_path
         mock_bundled_dir.return_value = tmp_path / "nonexistent"
 
-        entries = _discover_all_plugins()
+        entries = [e for e in _discover_all_plugins() if e[3] != "entrypoint"]
         keys = [e[5] for e in entries]
         assert "disk-cleanup" in keys
         assert "web/tavily" in keys
@@ -306,5 +306,6 @@ class TestCmdListJson:
             cmd_list(args)
             captured = capsys.readouterr()
             payload = json.loads(captured.out)
+            payload = [p for p in payload if p["source"] != "entrypoint"]
             assert len(payload) == 1
             assert payload[0]["status"] == "enabled"
