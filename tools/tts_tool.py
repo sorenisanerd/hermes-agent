@@ -4169,12 +4169,26 @@ def stream_tts_to_speaker(
                     _max_reinit = 3
                     _reinit_count = 0
                     _current_stream = output_stream
+
+                    def _cut_stream():
+                        """Immediately flush audio buffered in the output stream."""
+                        nonlocal _current_stream
+                        if _current_stream is not None:
+                            try:
+                                _current_stream.abort()  # stop now; discard buffer
+                            except Exception:
+                                try:
+                                    _current_stream.stop()
+                                except Exception:
+                                    pass
+
                     while True:
                         chunk_queue = _audio_queue.get()
                         if chunk_queue is None:
                             break
                         if stop_event.is_set():
-                            continue
+                            _cut_stream()
+                            break
                         if _current_stream is None:
                             _chunks = []
                             while True:
@@ -4192,6 +4206,7 @@ def stream_tts_to_speaker(
                             if chunk is None:
                                 break
                             if stop_event.is_set():
+                                _cut_stream()
                                 break
                             _buf = _pcm_leftover + chunk
                             _aligned_len = len(_buf) - (len(_buf) % 2)
