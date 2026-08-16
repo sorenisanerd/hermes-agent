@@ -175,6 +175,17 @@ class _StreamerPlayback:
                 self.output_stream.stop()
                 self.output_stream.close()
 
+    def cut_stream(self) -> None:
+        """Immediately discard audio buffered in the output stream (barge-in)."""
+        stream = getattr(self, "_current_stream", None)
+        if stream is None:
+            return
+        try:
+            stream.abort()  # stop now; discard buffer
+        except Exception:
+            with contextlib.suppress(Exception):
+                stream.stop()
+
     def speak(self, text: str) -> None:
         """Start ``streamer.stream(text)`` and prefetch its chunks immediately."""
         try:
@@ -210,6 +221,8 @@ class _StreamerPlayback:
         for chunk_queue in iter(self._audio_queue.get, None):
             if not self.stop_event.is_set():
                 play(chunk_queue)
+            else:
+                self.cut_stream()
 
     def _write_pcm(self, buf: bytes) -> None:
         self._current_stream.write(self._np.frombuffer(buf, dtype="<i2").reshape(-1, 1))
@@ -248,6 +261,8 @@ class _StreamerPlayback:
                     return
                 with contextlib.suppress(Exception):
                     self._write_pcm(aligned)
+        if self.stop_event.is_set():
+            self.cut_stream()
 
     def _playback_worker(self) -> None:
         """Single consumer: play audio segments from the queue in order."""
