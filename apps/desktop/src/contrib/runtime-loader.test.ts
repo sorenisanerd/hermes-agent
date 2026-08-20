@@ -72,7 +72,7 @@ describe('scanDiskPlugins (#66899)', () => {
     expect(readDir).not.toHaveBeenCalled()
   })
 
-  it('probes desktop/plugin.js inside agent-plugin packages (unified packaging)', async () => {
+  it('skips agent-only packages without reading a missing desktop entry', async () => {
     desktopPluginsRoot.mockResolvedValue('/local/.hermes/desktop-plugins')
     agentPluginsRoot.mockResolvedValue('/local/.hermes/plugins')
     readDir.mockImplementation(async dir =>
@@ -80,14 +80,14 @@ describe('scanDiskPlugins (#66899)', () => {
         ? { entries: [{ isDirectory: true, name: 'my-feature', path: '/local/.hermes/plugins/my-feature' }] }
         : { entries: [] }
     )
-    // No desktop half in this package — probe must target desktop/plugin.js.
-    readFileText.mockRejectedValue(new Error('ENOENT'))
 
     await discoverRuntimePlugins()
 
-    expect(readFileText).toHaveBeenCalledWith('/local/.hermes/plugins/my-feature/desktop/plugin.js')
-    // The Python half's files must never be probed as a desktop entry.
-    expect(readFileText).not.toHaveBeenCalledWith('/local/.hermes/plugins/my-feature/plugin.js')
+    // Missing optional desktop folders are represented by the non-throwing
+    // directory IPC result. Do not issue a failing readFileText IPC call:
+    // Electron prints every rejected IPC handler even when the renderer catches it.
+    expect(readDir).toHaveBeenCalledWith('/local/.hermes/plugins/my-feature/desktop')
+    expect(readFileText).not.toHaveBeenCalled()
   })
 
   it('still scans the standalone root when agentPluginsRoot is absent (older shell)', async () => {
@@ -107,6 +107,8 @@ describe('scanDiskPlugins (#66899)', () => {
     readDir.mockImplementation(async dir =>
       dir === '/local/.hermes/plugins'
         ? { entries: [{ isDirectory: true, name: 'uni', path: '/local/.hermes/plugins/uni' }] }
+        : dir === '/local/.hermes/plugins/uni/desktop'
+          ? { entries: [{ isDirectory: false, name: 'plugin.js', path: '/local/.hermes/plugins/uni/desktop/plugin.js' }] }
         : { entries: [] }
     )
 

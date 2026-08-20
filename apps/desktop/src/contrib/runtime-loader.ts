@@ -233,8 +233,8 @@ interface DiskRoot {
   /** Root-level enable posture, forwarded to the loader (see LoadOptions). */
   defaultEnabled?: boolean
   dir: string
-  /** Resolve a scanned folder to its candidate plugin entry file. */
-  entry: (folderPath: string) => string
+  /** Resolve a scanned plugin folder to the directory containing plugin.js. */
+  entryDir: (folderPath: string) => string
 }
 
 /** Both scan roots, resolved fresh each pass (Electron-local, never the
@@ -251,7 +251,7 @@ async function diskRoots(): Promise<DiskRoot[]> {
   const standalone = await desktop.desktopPluginsRoot?.()
 
   if (standalone) {
-    roots.push({ dir: standalone, entry: folder => `${folder}/plugin.js` })
+    roots.push({ dir: standalone, entryDir: folder => folder })
   }
 
   const unified = await desktop.agentPluginsRoot?.()
@@ -261,7 +261,7 @@ async function diskRoots(): Promise<DiskRoot[]> {
     // user allowlists the Python half (plugins.enabled), so the desktop half
     // matches that posture — inventoried in Settings → Plugins, off until
     // toggled. The standalone desktop-plugins door keeps its default-on trust.
-    roots.push({ defaultEnabled: false, dir: unified, entry: folder => `${folder}/desktop/plugin.js` })
+    roots.push({ defaultEnabled: false, dir: unified, entryDir: folder => `${folder}/desktop` })
   }
 
   return roots
@@ -359,17 +359,22 @@ async function scanDiskPlugins(): Promise<void> {
       }
 
       for (const dir of entries.filter(e => e.isDirectory)) {
-        const file = root.entry(dir.path)
+        // Agent-only plugin packages legitimately omit `desktop/plugin.js`.
+        // Use readDir's non-throwing result to discover the optional entry instead
+        // of a failing readFileText IPC call, which Electron logs before the
+        // renderer can catch it.
+        const { entries: entryFiles } = await desktop.readDir(root.entryDir(dir.path))
+        const entryFile = entryFiles.find(entry => entry.name === 'plugin.js' && !entry.isDirectory)
+
+        if (!entryFile) {
+          continue
+        }
+
+        const file = entryFile.path
         seen.add(file)
 
         if (disk.has(file)) {
           continue
-        }
-
-        try {
-          await desktop.readFileText(file)
-        } catch {
-          continue // No entry file (yet) — not a plugin folder for this root.
         }
 
         const record: DiskPlugin = {
