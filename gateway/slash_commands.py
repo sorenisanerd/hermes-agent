@@ -318,7 +318,7 @@ class GatewaySlashCommandsMixin:
         # Add a recovery hint so the user knows how to get back to the old session
         if _old_sid and self._session_db:
             try:
-                _old_title = self._session_db.get_session_title(_old_sid)
+                _old_title = await self._session_db.get_session_title(_old_sid)
                 if _old_title:
                     header += (
                         "\n\n💡 Previous session saved as **{title}**. "
